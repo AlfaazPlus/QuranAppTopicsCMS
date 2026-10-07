@@ -1,0 +1,15 @@
+{
+  "name": "ontology-explorer",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.13" },
+  "scripts": {
+    "snapshot": "node --no-warnings scripts/build-snapshot.mjs",
+    "snapshot:upstream": "node --no-warnings scripts/build-snapshot.mjs --upstream",
+    "validate": "node --no-warnings scripts/validate.mjs",
+    "merge": "node --no-warnings scripts/merge.mjs",
+    "web:dev": "npm --prefix web run dev",
+    "web:build": "npm --prefix web run build",
+    "build:site": "npm run snapshot:upstream && npm --prefix web ci && npm --prefix web run build"
+  }
+}

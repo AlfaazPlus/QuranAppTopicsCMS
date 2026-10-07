@@ -1,0 +1,52 @@
+name: Refresh topics snapshot
+
+# Keeps web/public/topics.json in sync with the upstream QuranApp topics.db so that
+# translation validation (slug checks, stale detection) runs against current data.
+on:
+  schedule:
+    - cron: "17 3 * * *" # daily
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build snapshot from upstream topics.db
+        run: npm run snapshot:upstream
+
+      # generatedAt changes on every run, so compare the data (not the timestamp).
+      - name: Detect data changes
+        id: diff
+        run: |
+          node -e '
+            const { execSync } = require("child_process");
+            const fs = require("fs");
+            const strip = (s) => { const o = JSON.parse(s); delete o.generatedAt; return JSON.stringify(o); };
+            let before = "";
+            try { before = strip(execSync("git show HEAD:web/public/topics.json", { maxBuffer: 1 << 28 }).toString()); } catch {}
+            const after = strip(fs.readFileSync("web/public/topics.json", "utf8"));
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, "changed=" + (before !== after) + "\n");
+          '
+
+      - name: Open pull request
+        if: steps.diff.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: "Refresh topics snapshot from upstream topics.db"
+          title: "Refresh topics snapshot from upstream"
+          body: |
+            Automated refresh of `web/public/topics.json` from the upstream QuranApp `topics.db`.
+            Existing translation files may now report stale entries; review the validation comment.
+          branch: automation/refresh-topics-snapshot
+          delete-branch: true
+          add-paths: web/public/topics.json
