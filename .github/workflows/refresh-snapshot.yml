@@ -2,6 +2,7 @@ name: Refresh topics snapshot
 
 # Keeps web/public/topics.json in sync with the upstream QuranApp topics.db so that
 # translation validation (slug checks, stale detection) runs against current data.
+# Most days this is a cheap HEAD + ETag compare and exits without downloading the DB.
 on:
   schedule:
     - cron: "17 3 * * *" # daily
@@ -21,12 +22,18 @@ jobs:
         with:
           node-version: 22
 
+      - name: Check if upstream topics.db changed
+        id: check
+        run: npm run check:upstream
+
       - name: Build snapshot from upstream topics.db
+        if: steps.check.outputs.changed == 'true'
         run: npm run snapshot:upstream
 
       # generatedAt changes on every run, so compare the data (not the timestamp).
       - name: Detect data changes
         id: diff
+        if: steps.check.outputs.changed == 'true'
         run: |
           node -e '
             const { execSync } = require("child_process");
@@ -39,7 +46,7 @@ jobs:
           '
 
       - name: Open pull request
-        if: steps.diff.outputs.changed == 'true'
+        if: steps.check.outputs.changed == 'true' && steps.diff.outputs.changed == 'true'
         uses: peter-evans/create-pull-request@v6
         with:
           commit-message: "Refresh topics snapshot from upstream topics.db"

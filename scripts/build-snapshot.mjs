@@ -11,13 +11,14 @@ import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 import { ROOT, parseArgs, resolveDbPath, openDb } from "./lib/db.mjs";
-import { buildSnapshot, toRawUrl, UPSTREAM_DB_URL } from "../shared/snapshot.js";
+import { buildSnapshot, normalizeEtag, toRawUrl, UPSTREAM_DB_URL } from "../shared/snapshot.js";
 
 const { opts } = parseArgs(process.argv.slice(2));
 const outPath = path.resolve(typeof opts.out === "string" ? opts.out : path.join(ROOT, "web", "public", "topics.json"));
 
 let dbPath;
 let source;
+let upstreamEtag = "";
 let cleanup = () => {};
 
 const url = typeof opts.url === "string" ? toRawUrl(opts.url) : opts.upstream ? UPSTREAM_DB_URL : null;
@@ -28,6 +29,7 @@ if (url) {
     console.error(`Download failed: HTTP ${res.status}`);
     process.exit(1);
   }
+  upstreamEtag = normalizeEtag(res.headers.get("etag"));
   const buf = Buffer.from(await res.arrayBuffer());
   if (buf.subarray(0, 15).toString("latin1") !== "SQLite format 3") {
     console.error("Downloaded file is not a SQLite database.");
@@ -46,7 +48,12 @@ const dbSha256 = crypto.createHash("sha256").update(fs.readFileSync(dbPath)).dig
 const db = openDb(dbPath);
 let snapshot;
 try {
-  snapshot = buildSnapshot((sql) => db.prepare(sql).all(), { source, dbFile: path.basename(source), dbSha256 });
+  snapshot = buildSnapshot((sql) => db.prepare(sql).all(), {
+    source,
+    dbFile: path.basename(source),
+    dbSha256,
+    ...(upstreamEtag ? { upstreamEtag } : {}),
+  });
 } finally {
   db.close();
   cleanup();
@@ -58,7 +65,7 @@ if (missingSlug.length) console.warn(`Warning: ${missingSlug.length} topics have
 fs.mkdirSync(path.dirname(outPath), { recursive: true });
 fs.writeFileSync(outPath, JSON.stringify(snapshot));
 console.log(
-  `Wrote ${outPath}\n  source: ${source} (sha ${dbSha256})\n  topics: ${snapshot.topics.length}, edges: ${Object.entries(snapshot.edges)
+  `Wrote ${outPath}\n  source: ${source} (sha ${dbSha256}${upstreamEtag ? `, etag ${upstreamEtag}` : ""})\n  topics: ${snapshot.topics.length}, edges: ${Object.entries(snapshot.edges)
     .map(([k, v]) => `${k}=${v.length}`)
     .join(" ")}`,
 );

@@ -31,9 +31,15 @@ export function assertTopicsSchema(query) {
   if (missing.length) throw new Error(`Not a topics database: missing table(s) ${missing.join(", ")}`);
 }
 
+/** Normalize an HTTP ETag (strip weak markers and quotes). */
+export function normalizeEtag(etag) {
+  if (!etag) return "";
+  return etag.trim().replace(/^W\//i, "").replaceAll('"', "");
+}
+
 /**
  * @param {(sql: string) => any[]} query
- * @param {{ source: string, dbFile?: string, dbSha256?: string }} meta
+ * @param {{ source: string, dbFile?: string, dbSha256?: string, upstreamEtag?: string }} meta
  */
 export function buildSnapshot(query, meta) {
   assertTopicsSchema(query);
@@ -84,12 +90,14 @@ export function buildSnapshot(query, meta) {
     if (k) edges[k].push([r.src_topic_id, r.tgt_topic_id]); // [child, parent] (related: [a, b])
   }
 
+  const upstreamEtag = normalizeEtag(meta.upstreamEtag);
   return {
     schema: 1,
     generatedAt: new Date().toISOString(),
     source: meta.source,
     dbFile: meta.dbFile ?? meta.source.split("/").pop(),
     dbSha256: meta.dbSha256 ?? "",
+    ...(upstreamEtag ? { upstreamEtag } : {}),
     languages: [...languages].sort(),
     topics,
     edges,

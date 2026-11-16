@@ -32,6 +32,8 @@ export interface Snapshot {
   source?: string;
   dbFile: string;
   dbSha256: string;
+  /** Normalized ETag from the upstream DB download (used by refresh CI). */
+  upstreamEtag?: string;
   languages: string[];
   topics: Topic[];
   edges: Record<Lens | "related", [number, number][]>;
